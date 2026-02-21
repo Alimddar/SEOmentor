@@ -25,12 +25,13 @@ from models import AIAnalysisResult, ScrapedData
 
 MODEL_CANDIDATES = [
     os.getenv("CLAUDE_MODEL", "").strip(),
+    "claude-sonnet-4-20250514",
     "claude-3-5-sonnet-latest",
     "claude-3-haiku-20240307",
 ]
 MODEL_CANDIDATES = [m for m in MODEL_CANDIDATES if m]
-TEMPERATURE = 0.2
-MAX_TOKENS = int(os.getenv("CLAUDE_MAX_TOKENS", "3200"))
+TEMPERATURE = 0.3
+MAX_TOKENS = int(os.getenv("CLAUDE_MAX_TOKENS", "5000"))
 MAX_RETRIES = int(os.getenv("CLAUDE_MAX_RETRIES", "3"))
 RETRY_BASE_SECONDS = float(os.getenv("CLAUDE_RETRY_BASE_SECONDS", "1.0"))
 COMPETITOR_LINK_ENRICHMENT = os.getenv("COMPETITOR_LINK_ENRICHMENT", "1").strip().lower() not in {
@@ -61,17 +62,37 @@ UNWANTED_COMPETITOR_HOSTS = {
     "wikipedia.org",
 }
 
-SYSTEM_MESSAGE = """You are a senior international SEO strategist.
-Return ONLY valid raw JSON that matches the schema exactly.
-Recommendations must be specific to the provided URL, country, language, and scraped metrics.
-Avoid generic advice and repeated actions.
-Do not include markdown, code fences, or text outside JSON."""
+SYSTEM_MESSAGE = """You are a world-class SEO strategist with 15+ years of experience across technical SEO, \
+content strategy, link building, and international search optimization. You have deep expertise in \
+Google's ranking algorithms, E-E-A-T signals, Core Web Vitals, and competitive analysis.
 
-USER_TEMPLATE = """Website URL: {url}
+Your analysis approach:
+- TECHNICAL: Evaluate crawlability, indexability, site architecture, schema markup, page speed, \
+mobile-friendliness, canonical tags, robots directives, and structured data implementation.
+- CONTENT: Assess topical authority, keyword targeting precision, content depth vs. competitors, \
+semantic coverage, heading hierarchy, and internal linking strategy.
+- AUTHORITY: Consider domain reputation signals, backlink profile quality indicators, \
+brand visibility, and trust signals.
+- LOCAL/INTERNATIONAL: Factor in geo-targeting, hreflang implementation, local search signals, \
+and language-specific search behavior patterns.
+
+Scoring methodology:
+- 0-30: Critical issues blocking indexing or rendering; site barely visible in search.
+- 31-50: Major structural/content deficiencies; significant ranking losses vs. competitors.
+- 51-70: Functional but underoptimized; clear room for improvement across multiple dimensions.
+- 71-85: Well-optimized with specific gaps; competitive in many queries.
+- 86-100: Elite optimization; marginal gains only.
+
+Return ONLY valid raw JSON matching the schema exactly.
+Never include markdown, code fences, or any text outside the JSON object.
+Do not use unescaped double quotes inside any JSON string value."""
+
+USER_TEMPLATE = """===== TARGET WEBSITE =====
+URL: {url}
 Country: {country}
 Language: {language}
 
-Onboarding Context:
+===== BUSINESS CONTEXT =====
 Primary Goal: {primary_goal}
 Business / Offer: {business_offer}
 Target Audience: {target_audience}
@@ -80,31 +101,87 @@ Seed Keywords: {seed_keywords}
 Known Competitors: {known_competitors}
 Execution Capacity: {execution_capacity}
 
-Extracted SEO Data:
-Title: {title}
+===== CRAWLED SEO DATA =====
+HTTP Status: {http_status}
+Response Time: {response_time_ms}ms
+Title Tag: {title}
+Title Length: {title_length} chars
 Meta Description: {meta_description}
-H1 Count: {h1_count}
-H2 Count: {h2_count}
+Meta Description Length: {meta_desc_length} chars
+Canonical URL: {canonical_url}
+Robots Meta: {robots_meta}
+Viewport Meta: {has_viewport}
+H1 Tags: {h1_count} (text: {h1_texts})
+H2 Tags: {h2_count}
+H3 Tags: {h3_count}
 Word Count: {word_count}
 Internal Links: {internal_links}
+External Links: {external_links}
+Total Images: {total_images}
 Images Missing Alt: {missing_alt_images}
+Open Graph Title: {og_title}
+Open Graph Description: {og_description}
+Open Graph Image: {og_image}
+Structured Data Present: {has_structured_data}
+Structured Data Types: {structured_data_types}
+Hreflang Tags: {hreflang_tags}
 
-Tasks:
-0. Tailor every recommendation to the onboarding context above when available.
-1. Generate an SEO score between 0 and 100.
-2. List key SEO issues using this string format:
-   "<Issue> | Evidence: <metric/page signal> | Impact: <why rankings suffer> | Fix: <exact action>".
-3. Identify exactly 5 realistic competitors operating in this country/language.
-   Include a clickable "url" and in "reason" explain why they directly compete.
-   If the business is food/delivery/restaurant, prefer Wolt listing URLs when possible.
-4. Identify 10-15 keyword/content gaps with strong search intent in this country/language.
-5. Generate exactly {plan_days} unique roadmap tasks (day 1..{plan_days}).
-   Every task must include a concrete page/asset target and a KPI.
-6. Avoid filler tasks like "develop strategy" without specifics.
-7. Do not use unescaped double quotes inside any JSON string value.
-8. Do not wrap keywords in double quotes; use plain words or single quotes.
+===== ANALYSIS INSTRUCTIONS =====
 
-Return ONLY this JSON structure:
+TASK 1 — SEO SCORE (0-100):
+Compute a holistic score weighing: technical health (crawlability, speed, mobile, schema) 30%, \
+on-page optimization (title, meta, headings, content depth, internal links) 35%, \
+content quality signals (word count, topical coverage, keyword targeting) 20%, \
+and authority/trust signals (external links, structured data, brand signals) 15%. \
+Be precise — avoid defaulting to 50-60 without justification.
+
+TASK 2 — KEY ISSUES (6-10 items):
+For each issue use EXACTLY this format:
+"<Category>: <Specific Issue> | Evidence: <exact metric or signal from the crawled data> | Impact: <how this hurts rankings/traffic with specifics> | Fix: <step-by-step action with specific targets>"
+
+Categories must include a mix from: Technical, Content, On-Page, Authority, UX, International.
+Reference actual numbers from the crawled data above. Never fabricate metrics.
+Prioritize issues by impact — list highest-impact issues first.
+
+TASK 3 — COMPETITORS (exactly 5):
+Identify 5 REAL businesses that directly compete for the same search queries in {country}/{language}.
+Requirements for each competitor:
+- "name": The actual business/brand name (not a generic description)
+- "url": Their real, working homepage URL — must be a genuine domain, not a guess
+- "reason": 2-3 sentences explaining: (a) what overlapping keywords/topics they target, \
+(b) their competitive advantage or weakness vs. this site, (c) what this site can learn from them
+
+Do NOT include search engines, social media platforms, or generic directories.
+If the business is in food/delivery/restaurant, include Wolt or similar delivery platform listings where relevant.
+Competitors MUST be real companies operating in {country} that a user could verify by visiting the URL.
+
+TASK 4 — KEYWORD GAPS (12-15 items):
+For each gap use this format:
+"<keyword or phrase> — Intent: <informational|commercial|transactional|navigational> — \
+Opportunity: <why this keyword is valuable and achievable for this site>"
+
+Focus on keywords where:
+- The site has no or weak content but competitors rank well
+- Search intent aligns with the business offer and target audience
+- The keyword has realistic ranking potential given the site's current authority
+Include long-tail variations, question-based queries, and locally relevant terms for {country}/{language}.
+
+TASK 5 — ROADMAP (exactly {plan_days} days):
+Create a day-by-day execution plan. Each task must follow this format:
+"<Specific action verb> <exact page/asset/element> — Target: <measurable KPI> — Deliverable: <what is produced>"
+
+Rules:
+- Days 1-3: Quick wins (meta fixes, alt text, schema markup, broken link fixes)
+- Days 4-10: On-page optimization (content improvements, heading restructuring, internal linking)
+- Days 11-20: Content creation and expansion (new pages, blog posts, FAQ sections targeting keyword gaps)
+- Days 21-{plan_days}: Authority building and advanced optimization (outreach prep, technical refinements, monitoring)
+- NEVER use vague tasks like 'develop strategy' or 'plan content' without specific deliverables
+- EVERY task must name a specific page URL path, content piece, or technical element
+- NO duplicate or near-duplicate tasks
+- Tailor task complexity to the stated execution capacity
+
+===== OUTPUT FORMAT =====
+Return ONLY this JSON structure with no additional text:
 
 {{
   "seo_score": number,
@@ -118,7 +195,7 @@ Return ONLY this JSON structure:
   ]
 }}
 
-No additional text."""
+Do not use unescaped double quotes inside any JSON string value; use single quotes instead."""
 
 FALLBACK_RESULT: AIAnalysisResult = {
     "seo_score": 50,
@@ -143,14 +220,14 @@ def _fallback_result(plan_days: int) -> AIAnalysisResult:
 
 def _compact_retry_suffix(plan_days: int) -> str:
     return f"""
-Previous output was invalid or incomplete.
-Regenerate complete strict JSON only and keep it compact:
-- issues: 4-5 items, each concise.
-- competitors: exactly 5.
-- keyword_gaps: exactly 10 short phrases.
-- roadmap: exactly {plan_days} tasks, each <= 14 words.
-- ensure all JSON brackets and braces are closed.
-- never use double quotes inside string values; use plain words or single quotes.
+Previous output was invalid or incomplete JSON.
+Regenerate complete strict JSON only. Requirements:
+- issues: 6-8 items with the exact format: '<Category>: <Issue> | Evidence: <data> | Impact: <why> | Fix: <action>'
+- competitors: exactly 5 real businesses with real URLs, name, reason, and url fields
+- keyword_gaps: exactly 12 items with intent and opportunity
+- roadmap: exactly {plan_days} tasks, each with specific action, target, and deliverable
+- ensure all JSON brackets and braces are closed properly
+- never use unescaped double quotes inside string values; use single quotes
 No text outside JSON.
 """
 
@@ -270,6 +347,12 @@ def _build_user_message(
         cleaned = [str(item).strip() for item in (values or []) if str(item).strip()]
         return ", ".join(cleaned) if cleaned else "Not provided"
 
+    title = scraped.get("title", "") or ""
+    meta_desc = scraped.get("meta_description", "") or ""
+    h1_texts_raw = scraped.get("h1_texts", []) or []
+    sd_types = scraped.get("structured_data_types", []) or []
+    hreflangs = scraped.get("hreflang_tags", []) or []
+
     return USER_TEMPLATE.format(
         url=url,
         country=country,
@@ -282,13 +365,30 @@ def _build_user_message(
         seed_keywords=_list_value(seed_keywords),
         known_competitors=_list_value(known_competitors),
         execution_capacity=_text_value(execution_capacity),
-        title=scraped.get("title", "") or "",
-        meta_description=scraped.get("meta_description", "") or "",
+        title=title,
+        title_length=len(title),
+        meta_description=meta_desc,
+        meta_desc_length=len(meta_desc),
         h1_count=scraped.get("h1_count", 0),
+        h1_texts=", ".join(h1_texts_raw) if h1_texts_raw else "None found",
         h2_count=scraped.get("h2_count", 0),
+        h3_count=scraped.get("h3_count", 0),
         word_count=scraped.get("word_count", 0),
         internal_links=scraped.get("internal_links", 0),
+        external_links=scraped.get("external_links", 0),
         missing_alt_images=scraped.get("missing_alt_images", 0),
+        total_images=scraped.get("total_images", 0),
+        canonical_url=scraped.get("canonical_url", "") or "Not set",
+        robots_meta=scraped.get("robots_meta", "") or "Not set",
+        has_viewport=scraped.get("has_viewport_meta", False),
+        og_title=scraped.get("og_title", "") or "Not set",
+        og_description=scraped.get("og_description", "") or "Not set",
+        og_image=scraped.get("og_image", "") or "Not set",
+        has_structured_data=scraped.get("has_structured_data", False),
+        structured_data_types=", ".join(sd_types) if sd_types else "None found",
+        hreflang_tags=", ".join(hreflangs) if hreflangs else "None found",
+        http_status=scraped.get("http_status", 0),
+        response_time_ms=scraped.get("response_time_ms", 0),
     )
 
 
@@ -388,11 +488,11 @@ def _is_low_quality_result(result: AIAnalysisResult, plan_days: int) -> bool:
             tasks.append(task)
 
     unique_tasks = len(set(tasks))
-    min_unique_tasks = max(6, int(plan_days * 0.8))
+    min_unique_tasks = max(6, int(plan_days * 0.85))
     return (
-        len(issues) < 4
+        len(issues) < 5
         or len(competitors) < 5
-        or len(keyword_gaps) < 8
+        or len(keyword_gaps) < 10
         or len(roadmap) < plan_days
         or unique_tasks < min_unique_tasks
     )
@@ -734,9 +834,14 @@ def analyze_with_ai(
         print("CLAUDE QUALITY: response too generic, retrying with stricter prompt.")
         quality_retry_message = (
             user_message
-            + "\n\nRegenerate now with stricter specificity.\n"
-            + "Rules: do not repeat tasks, include concrete page/asset targets, include KPI in every roadmap task, "
-            + f"ensure competitors are realistic for the country/language, and output exactly {effective_plan_days} roadmap days."
+            + "\n\nCRITICAL: Your previous response lacked specificity. Regenerate with these strict rules:\n"
+            + "1. Issues MUST reference actual metrics from the crawled data — never fabricate numbers.\n"
+            + "2. Competitors MUST be real businesses with real working URLs in the target country. Verify each name is a real brand.\n"
+            + "3. Keyword gaps MUST include search intent classification and be relevant to the business offer.\n"
+            + "4. Roadmap tasks MUST each name a specific page path, content piece, or technical element — "
+            + "no vague tasks like 'improve SEO' or 'optimize content'.\n"
+            + f"5. Output EXACTLY {effective_plan_days} unique, non-duplicate roadmap days.\n"
+            + "6. Every roadmap task must include a measurable KPI and a concrete deliverable.\n"
         )
         improved_content = _call_claude(client, quality_retry_message)
         if not improved_content:
