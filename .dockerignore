@@ -1,0 +1,8 @@
+.git
+.gitignore
+frontend
+backend/venv
+backend/__pycache__
+backend/*.db
+backend/.env
+**/__pycache__
