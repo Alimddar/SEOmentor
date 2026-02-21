@@ -101,6 +101,8 @@ Tasks:
 5. Generate exactly {plan_days} unique roadmap tasks (day 1..{plan_days}).
    Every task must include a concrete page/asset target and a KPI.
 6. Avoid filler tasks like "develop strategy" without specifics.
+7. Do not use unescaped double quotes inside any JSON string value.
+8. Do not wrap keywords in double quotes; use plain words or single quotes.
 
 Return ONLY this JSON structure:
 
@@ -148,6 +150,7 @@ Regenerate complete strict JSON only and keep it compact:
 - keyword_gaps: exactly 10 short phrases.
 - roadmap: exactly {plan_days} tasks, each <= 14 words.
 - ensure all JSON brackets and braces are closed.
+- never use double quotes inside string values; use plain words or single quotes.
 No text outside JSON.
 """
 
@@ -181,12 +184,68 @@ def _extract_json(text: str) -> dict | None:
         .replace("’", "'")
     )
 
+    def _escape_inner_quotes(value: str) -> str:
+        """
+        Escape likely unescaped quotes inside JSON strings.
+        Keeps closing quotes intact by checking the next non-space token.
+        """
+        out: list[str] = []
+        in_string = False
+        escaped = False
+        length = len(value)
+        i = 0
+
+        while i < length:
+            ch = value[i]
+            if escaped:
+                out.append(ch)
+                escaped = False
+                i += 1
+                continue
+
+            if ch == "\\":
+                out.append(ch)
+                escaped = True
+                i += 1
+                continue
+
+            if ch == '"':
+                if not in_string:
+                    in_string = True
+                    out.append(ch)
+                    i += 1
+                    continue
+
+                j = i + 1
+                while j < length and value[j].isspace():
+                    j += 1
+                next_char = value[j] if j < length else ""
+
+                # Valid string-close chars in JSON: key close before ":", value close before ",", "}", "]"
+                if next_char in {":", ",", "}", "]"}:
+                    in_string = False
+                    out.append(ch)
+                else:
+                    out.append('\\"')
+                i += 1
+                continue
+
+            out.append(ch)
+            i += 1
+
+        return "".join(out)
+
+    repaired_json = _escape_inner_quotes(json_str)
+
     try:
         return json.loads(json_str)
-    except Exception as e:
-        print("JSON PARSE ERROR:", json_str)
-        print("ERROR:", str(e))
-        return None
+    except Exception:
+        try:
+            return json.loads(repaired_json)
+        except Exception as e:
+            print("JSON PARSE ERROR:", json_str)
+            print("ERROR:", str(e))
+            return None
 
 
 def _build_user_message(
